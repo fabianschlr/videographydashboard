@@ -23,3 +23,35 @@ create policy "own rows" on public.milestones for all using (auth.uid() = user_i
 create policy "own rows" on public.brain_dumps for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own rows" on public.coach_context for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own rows" on public.settings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create or replace function public.replace_shifts(p_shifts jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  first_day date;
+  last_day date;
+begin
+  if auth.uid() is null or jsonb_typeof(p_shifts) <> 'array' or jsonb_array_length(p_shifts) = 0 then
+    raise exception 'Invalid shift import';
+  end if;
+
+  select min((entry->>'date')::date), max((entry->>'date')::date)
+  into first_day, last_day
+  from jsonb_array_elements(p_shifts) as entry;
+
+  delete from public.shifts
+  where user_id = auth.uid() and date between first_day and last_day;
+
+  insert into public.shifts (user_id, date, start_time, end_time, shift_type)
+  select
+    auth.uid(),
+    (entry->>'date')::date,
+    (entry->>'start_time')::time,
+    (entry->>'end_time')::time,
+    entry->>'shift_type'
+  from jsonb_array_elements(p_shifts) as entry;
+end;
+$$;
