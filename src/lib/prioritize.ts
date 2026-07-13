@@ -5,8 +5,13 @@ const minutes = (value: string) => {
   return hour * 60 + minute;
 };
 
+const localDate = (date: Date) => {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+};
+
 export function availableMinutesToday(shifts: Shift[], now = new Date()) {
-  const date = now.toISOString().slice(0, 10);
+  const date = localDate(now);
   const todays = shifts.filter((shift) => shift.date === date)
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
   const current = now.getHours() * 60 + now.getMinutes();

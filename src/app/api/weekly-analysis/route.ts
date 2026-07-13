@@ -9,14 +9,19 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const { answers, coachContext } = await request.json();
+  if (!answers || typeof answers !== "object") return NextResponse.json({ error: "Ungültige Antworten." }, { status: 400 });
   let analysis = "Kein KI-Key eingerichtet. Halte fest, was konkret nächste Woche anders läuft.";
   let summary = Object.values(answers as Record<string, string>).join(" ").slice(0, 900);
   if (process.env.ANTHROPIC_API_KEY) {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const result = await client.messages.create({ model: "claude-3-5-haiku-latest", max_tokens: 350, system, messages: [{ role: "user", content: `Bisheriger Kontext: ${coachContext || "keiner"}\nWochenreview: ${JSON.stringify(answers)}\nAnalysiere kurz. Ergänze am Schluss eine Kontext-Zusammenfassung unter 200 Wörtern, eingeleitet mit KONTEXT:` }] });
-    const text = result.content[0]?.type === "text" ? result.content[0].text : analysis;
-    const [visible, context] = text.split("KONTEXT:");
-    analysis = visible.trim(); summary = (context ?? visible).trim().slice(0, 1200);
+    try {
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const result = await client.messages.create({ model: "claude-3-5-haiku-latest", max_tokens: 350, system, messages: [{ role: "user", content: `Bisheriger Kontext: ${coachContext || "keiner"}\nWochenreview: ${JSON.stringify(answers)}\nAnalysiere kurz. Ergänze am Schluss eine Kontext-Zusammenfassung unter 200 Wörtern, eingeleitet mit KONTEXT:` }] });
+      const text = result.content[0]?.type === "text" ? result.content[0].text : analysis;
+      const [visible, context] = text.split("KONTEXT:");
+      analysis = visible.trim(); summary = (context ?? visible).trim().slice(0, 1200);
+    } catch {
+      analysis = "Die Analyse war gerade nicht verfügbar. Benenne für nächste Woche nur eine konkrete Änderung.";
+    }
   }
   const week = new Date(); week.setDate(week.getDate() - ((week.getDay() + 6) % 7));
   await supabase.from("weekly_reviews").insert({ user_id: user.id, week_start_date: week.toISOString().slice(0, 10), answers, ai_analysis: analysis });
